@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+
+// q is the version number is correct? should not be updated
 pragma solidity ^0.7.6;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -34,18 +36,22 @@ contract PuppyRaffle is ERC721, Ownable {
     mapping(uint256 => string) public rarityToUri;
     mapping(uint256 => string) public rarityToName;
 
+    // @audit commonImageUri,rareImageUri and legendaryImageUri seems are constant variables but there is no constant in definitions
     // Stats for the common puppy (pug)
-    string private commonImageUri = "ipfs://QmSsYRx3LpDAb1GZQm7zZ1AuHZjfbPkD6J7s9r41xu1mf8";
+    string private commonImageUri =
+        "ipfs://QmSsYRx3LpDAb1GZQm7zZ1AuHZjfbPkD6J7s9r41xu1mf8";
     uint256 public constant COMMON_RARITY = 70;
     string private constant COMMON = "common";
 
     // Stats for the rare puppy (st. bernard)
-    string private rareImageUri = "ipfs://QmUPjADFGEKmfohdTaNcWhp7VGk26h5jXDA7v3VtTnTLcW";
+    string private rareImageUri =
+        "ipfs://QmUPjADFGEKmfohdTaNcWhp7VGk26h5jXDA7v3VtTnTLcW";
     uint256 public constant RARE_RARITY = 25;
     string private constant RARE = "rare";
 
     // Stats for the legendary puppy (shiba inu)
-    string private legendaryImageUri = "ipfs://QmYx6GsYAKnNzZ9A6NvEKV9nf1VaDzJrqDR23Y8YSkebLU";
+    string private legendaryImageUri =
+        "ipfs://QmYx6GsYAKnNzZ9A6NvEKV9nf1VaDzJrqDR23Y8YSkebLU";
     uint256 public constant LEGENDARY_RARITY = 5;
     string private constant LEGENDARY = "legendary";
 
@@ -57,7 +63,11 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param _entranceFee the cost in wei to enter the raffle
     /// @param _feeAddress the address to send the fees to
     /// @param _raffleDuration the duration in seconds of the raffle
-    constructor(uint256 _entranceFee, address _feeAddress, uint256 _raffleDuration) ERC721("Puppy Raffle", "PR") {
+    constructor(
+        uint256 _entranceFee,
+        address _feeAddress,
+        uint256 _raffleDuration
+    ) ERC721("Puppy Raffle", "PR") {
         entranceFee = _entranceFee;
         feeAddress = _feeAddress;
         raffleDuration = _raffleDuration;
@@ -72,12 +82,16 @@ contract PuppyRaffle is ERC721, Ownable {
         rarityToName[LEGENDARY_RARITY] = LEGENDARY;
     }
 
+    // @audit read players many times from storage can cuse spend huge gas fee
     /// @notice this is how players enter the raffle
     /// @notice they have to pay the entrance fee * the number of players
     /// @notice duplicate entrants are not allowed
     /// @param newPlayers the list of players to enter the raffle
     function enterRaffle(address[] memory newPlayers) public payable {
-        require(msg.value == entranceFee * newPlayers.length, "PuppyRaffle: Must send enough to enter raffle");
+        require(
+            msg.value == entranceFee * newPlayers.length,
+            "PuppyRaffle: Must send enough to enter raffle"
+        );
         for (uint256 i = 0; i < newPlayers.length; i++) {
             players.push(newPlayers[i]);
         }
@@ -85,18 +99,29 @@ contract PuppyRaffle is ERC721, Ownable {
         // Check for duplicates
         for (uint256 i = 0; i < players.length - 1; i++) {
             for (uint256 j = i + 1; j < players.length; j++) {
-                require(players[i] != players[j], "PuppyRaffle: Duplicate player");
+                require(
+                    players[i] != players[j],
+                    "PuppyRaffle: Duplicate player"
+                );
             }
         }
         emit RaffleEnter(newPlayers);
     }
 
+    // @audit if playerAddress != address(0) has issue and condition('!=') should change to '==' unless the function doesn't work correctly
+    // @audit player address must first set to zero address and then value send to player address which make It vulnerable to Re-Entrancy attack
     /// @param playerIndex the index of the player to refund. You can find it externally by calling `getActivePlayerIndex`
     /// @dev This function will allow there to be blank spots in the array
     function refund(uint256 playerIndex) public {
         address playerAddress = players[playerIndex];
-        require(playerAddress == msg.sender, "PuppyRaffle: Only the player can refund");
-        require(playerAddress != address(0), "PuppyRaffle: Player already refunded, or is not active");
+        require(
+            playerAddress == msg.sender,
+            "PuppyRaffle: Only the player can refund"
+        );
+        require(
+            playerAddress != address(0),
+            "PuppyRaffle: Player already refunded, or is not active"
+        );
 
         payable(msg.sender).sendValue(entranceFee);
 
@@ -104,10 +129,14 @@ contract PuppyRaffle is ERC721, Ownable {
         emit RaffleRefunded(playerAddress);
     }
 
+
+    // @audit read players many times from storage can cuse spend huge gas fee
     /// @notice a way to get the index in the array
     /// @param player the address of a player in the raffle
     /// @return the index of the player in the array, if they are not active, it returns 0
-    function getActivePlayerIndex(address player) external view returns (uint256) {
+    function getActivePlayerIndex(
+        address player
+    ) external view returns (uint256) {
         for (uint256 i = 0; i < players.length; i++) {
             if (players[i] == player) {
                 return i;
@@ -116,6 +145,7 @@ contract PuppyRaffle is ERC721, Ownable {
         return 0;
     }
 
+    // @audit hash of on-chain data is not completely random and can be gussed
     /// @notice this function will select a winner and mint a puppy
     /// @notice there must be at least 4 players, and the duration has occurred
     /// @notice the previous winner is stored in the previousWinner variable
@@ -123,10 +153,16 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @dev we reset the active players array after the winner is selected
     /// @dev we send 80% of the funds to the winner, the other 20% goes to the feeAddress
     function selectWinner() external {
-        require(block.timestamp >= raffleStartTime + raffleDuration, "PuppyRaffle: Raffle not over");
+        require(
+            block.timestamp >= raffleStartTime + raffleDuration,
+            "PuppyRaffle: Raffle not over"
+        );
         require(players.length >= 4, "PuppyRaffle: Need at least 4 players");
-        uint256 winnerIndex =
-            uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
+        uint256 winnerIndex = uint256(
+            keccak256(
+                abi.encodePacked(msg.sender, block.timestamp, block.difficulty)
+            )
+        ) % players.length;
         address winner = players[winnerIndex];
         uint256 totalAmountCollected = players.length * entranceFee;
         uint256 prizePool = (totalAmountCollected * 80) / 100;
@@ -136,7 +172,9 @@ contract PuppyRaffle is ERC721, Ownable {
         uint256 tokenId = totalSupply();
 
         // We use a different RNG calculate from the winnerIndex to determine rarity
-        uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
+        uint256 rarity = uint256(
+            keccak256(abi.encodePacked(msg.sender, block.difficulty))
+        ) % 100;
         if (rarity <= COMMON_RARITY) {
             tokenIdToRarity[tokenId] = COMMON_RARITY;
         } else if (rarity <= COMMON_RARITY + RARE_RARITY) {
@@ -148,17 +186,21 @@ contract PuppyRaffle is ERC721, Ownable {
         delete players;
         raffleStartTime = block.timestamp;
         previousWinner = winner;
-        (bool success,) = winner.call{value: prizePool}("");
+        (bool success, ) = winner.call{value: prizePool}("");
         require(success, "PuppyRaffle: Failed to send prize pool to winner");
         _safeMint(winner, tokenId);
     }
 
+    // @audit there is no access control to preventing non-owner to the withdraw fees
     /// @notice this function will withdraw the fees to the feeAddress
     function withdrawFees() external {
-        require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
+        require(
+            address(this).balance == uint256(totalFees),
+            "PuppyRaffle: There are currently players active!"
+        );
         uint256 feesToWithdraw = totalFees;
         totalFees = 0;
-        (bool success,) = feeAddress.call{value: feesToWithdraw}("");
+        (bool success, ) = feeAddress.call{value: feesToWithdraw}("");
         require(success, "PuppyRaffle: Failed to withdraw fees");
     }
 
@@ -169,6 +211,7 @@ contract PuppyRaffle is ERC721, Ownable {
         emit FeeAddressChanged(newFeeAddress);
     }
 
+    // @audit this function will read players from strorage many times wich can cuse spend huge gas fee
     /// @notice this function will return true if the msg.sender is an active player
     function _isActivePlayer() internal view returns (bool) {
         for (uint256 i = 0; i < players.length; i++) {
@@ -186,31 +229,37 @@ contract PuppyRaffle is ERC721, Ownable {
 
     /// @notice this function will return the URI for the token
     /// @param tokenId the Id of the NFT
-    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
-        require(_exists(tokenId), "PuppyRaffle: URI query for nonexistent token");
+    function tokenURI(
+        uint256 tokenId
+    ) public view virtual override returns (string memory) {
+        require(
+            _exists(tokenId),
+            "PuppyRaffle: URI query for nonexistent token"
+        );
 
         uint256 rarity = tokenIdToRarity[tokenId];
         string memory imageURI = rarityToUri[rarity];
         string memory rareName = rarityToName[rarity];
 
-        return string(
-            abi.encodePacked(
-                _baseURI(),
-                Base64.encode(
-                    bytes(
-                        abi.encodePacked(
-                            '{"name":"',
-                            name(),
-                            '", "description":"An adorable puppy!", ',
-                            '"attributes": [{"trait_type": "rarity", "value": ',
-                            rareName,
-                            '}], "image":"',
-                            imageURI,
-                            '"}'
+        return
+            string(
+                abi.encodePacked(
+                    _baseURI(),
+                    Base64.encode(
+                        bytes(
+                            abi.encodePacked(
+                                '{"name":"',
+                                name(),
+                                '", "description":"An adorable puppy!", ',
+                                '"attributes": [{"trait_type": "rarity", "value": ',
+                                rareName,
+                                '}], "image":"',
+                                imageURI,
+                                '"}'
+                            )
                         )
                     )
                 )
-            )
-        );
+            );
     }
 }
